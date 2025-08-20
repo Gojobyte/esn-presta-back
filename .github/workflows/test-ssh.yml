@@ -11,14 +11,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Décode la clé privée en un fichier utilisable par SSH
+      - name: Prepare private key file
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY_B64 }}" | base64 -d > id_gha
+          chmod 600 id_gha
+
+      # Connexion SSH (clé via key_path)
       - name: SSH to VPS and run a simple command
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.VPS_PORT }}
+          key_path: id_gha
           script: |
             echo "✅ Connected to $(hostname)"
             whoami
             uname -a
+          debug: true
