@@ -2,6 +2,6 @@ node_modules
 dist
 build
 .env
-npm-debug.log*
-pnpm-lock.yaml # optionnel si tu préfères le commiter -> alors enlève cette ligne
 .DS_Store
+npm-debug.log*
+pnpm-lock.yaml
