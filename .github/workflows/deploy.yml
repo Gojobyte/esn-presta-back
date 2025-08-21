@@ -1,45 +1,74 @@
-name: Deploy Backend
+name: Deploy Backend (DEBUG)
 
 on:
-  workflow_dispatch:            # permet de lancer à la main depuis l’onglet Actions
+  workflow_dispatch:
   push:
-    branches: [ "main" ]        # déclenche à chaque push/merge sur main
+    branches: [ "main" ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: SSH to VPS and deploy
+      - name: SSH to VPS (diagnostic + déploiement)
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST }}        # IP publique de ton VPS
-          username: ${{ secrets.VPS_USER }}    # ubuntu
-          port: ${{ secrets.VPS_PORT }}        # ex: 4423 si tu as changé le port
-          key: ${{ secrets.SSH_PRIVATE_KEY }}  # clé privée OPENSSH (BEGIN/END)
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          timeout: 60s
+          command_timeout: 20m
+          debug: true
           script: |
             set -e
             APP_DIR="/opt/apps/esn-presta-back"
 
-            echo "==> Pull code depuis origin/main"
+            echo "=== CONNECTIVITÉ & ENV ==="
+            whoami
+            hostname
+            echo "PORT SSH utilisé: ${{ secrets.VPS_PORT }}"
+            echo "Dossier APP_DIR: $APP_DIR"
+            echo "Uptime:"
+            uptime || true
+            echo "Node/PNPM/PM2:"
+            node -v || true
+            pnpm -v || (corepack enable && corepack prepare pnpm@latest --activate && pnpm -v)
+            pm2 -v || true
+            echo "PM2 list (avant):"
+            pm2 list || true
+
+            echo "=== ARBORESCENCE & GIT ==="
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R "$USER":"$USER" "$APP_DIR"
+            ls -la "$APP_DIR" || true
             if [ -d "$APP_DIR/.git" ]; then
+              echo "Repo déjà présent → fetch/reset"
               cd "$APP_DIR"
+              git remote -v || true
               git fetch --all
+              git rev-parse --abbrev-ref HEAD || true
               git reset --hard origin/main
             else
-              sudo mkdir -p "$APP_DIR"
-              sudo chown -R "$USER":"$USER" "$APP_DIR"
+              echo "Repo absent → clone"
               git clone git@github.com:Gojobyte/esn-presta-back.git "$APP_DIR"
               cd "$APP_DIR"
               git checkout main || true
             fi
+            echo "Dernier commit côté VPS:"
+            git log -1 --oneline || true
 
-            echo "==> Lancer le script de déploiement"
+            echo "=== DÉPLOIEMENT ==="
             chmod +x "$APP_DIR/deploy-back.sh"
             "$APP_DIR/deploy-back.sh" "$APP_DIR"
 
-            echo "==> Vérifier la santé finale"
-            curl -sfm 5 http://127.0.0.1:3001/api/health || (echo "Healthcheck failed" && exit 1)
+            echo "=== POST-DEPLOY ==="
+            echo "PM2 list (après):"
+            pm2 list || true
+            echo "Logs (dernier 50 lignes):"
+            pm2 logs esn-presta-back --lines 50 --nostream || true
+
+            echo "=== HEALTHCHECK FINAL ==="
+            curl -svfm 8 http://127.0.0.1:3001/api/health || (echo 'Healthcheck failed' && exit 1)
