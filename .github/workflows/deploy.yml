@@ -1,13 +1,14 @@
 name: Deploy Backend
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:            # permet de lancer à la main depuis l’onglet Actions
   push:
-    branches: [ "main" ]
+    branches: [ "main" ]        # déclenche à chaque push/merge sur main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -15,25 +16,30 @@ jobs:
       - name: SSH to VPS and deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST }}     # IP publique du VPS
-          username: ${{ secrets.VPS_USER }} # ubuntu
-          port: ${{ secrets.VPS_PORT }}     # 4423 si tu as changé le port
-          key: ${{ secrets.SSH_PRIVATE_KEY }}   # <-- clé privée directe (PAS key_path)
+          host: ${{ secrets.VPS_HOST }}        # IP publique de ton VPS
+          username: ${{ secrets.VPS_USER }}    # ubuntu
+          port: ${{ secrets.VPS_PORT }}        # ex: 4423 si tu as changé le port
+          key: ${{ secrets.SSH_PRIVATE_KEY }}  # clé privée OPENSSH (BEGIN/END)
           script: |
             set -e
-            echo "==> Pull code"
-            cd /opt/apps/esn-presta-back
-            if [ -d .git ]; then
+            APP_DIR="/opt/apps/esn-presta-back"
+
+            echo "==> Pull code depuis origin/main"
+            if [ -d "$APP_DIR/.git" ]; then
+              cd "$APP_DIR"
               git fetch --all
               git reset --hard origin/main
             else
-              git clone git@github.com:Gojobyte/esn-presta-back.git .
+              sudo mkdir -p "$APP_DIR"
+              sudo chown -R "$USER":"$USER" "$APP_DIR"
+              git clone git@github.com:Gojobyte/esn-presta-back.git "$APP_DIR"
+              cd "$APP_DIR"
               git checkout main || true
             fi
 
-            echo "==> Run deploy-back.sh"
-            chmod +x deploy-back.sh
-            ./deploy-back.sh
+            echo "==> Lancer le script de déploiement"
+            chmod +x "$APP_DIR/deploy-back.sh"
+            "$APP_DIR/deploy-back.sh" "$APP_DIR"
 
-            echo "==> Check health"
+            echo "==> Vérifier la santé finale"
             curl -sfm 5 http://127.0.0.1:3001/api/health || (echo "Healthcheck failed" && exit 1)
