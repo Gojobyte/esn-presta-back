@@ -12,24 +12,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare private key file (readable by container)
-        shell: bash
-        run: |
-          umask 077
-          cat > id_gha <<'EOF'
-          ${{ secrets.SSH_PRIVATE_KEY }}
-          EOF
-          # Rendez la clé lisible par l'utilisateur du conteneur de l'action
-          chmod 644 id_gha
-          ls -l id_gha
-
       - name: SSH to VPS and deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          port: ${{ secrets.VPS_PORT }}
-          key_path: ${{ github.workspace }}/id_gha   # chemin absolu
+          host: ${{ secrets.VPS_HOST }}     # IP publique du VPS
+          username: ${{ secrets.VPS_USER }} # ubuntu
+          port: ${{ secrets.VPS_PORT }}     # 4423 si tu as changé le port
+          key: ${{ secrets.SSH_PRIVATE_KEY }}   # <-- clé privée directe (PAS key_path)
           script: |
             set -e
             echo "==> Pull code"
@@ -48,8 +37,3 @@ jobs:
 
             echo "==> Check health"
             curl -sfm 5 http://127.0.0.1:3001/api/health || (echo "Healthcheck failed" && exit 1)
-
-      # (Optionnel) Nettoyage du fichier clé
-      - name: Cleanup key
-        if: always()
-        run: rm -f id_gha
