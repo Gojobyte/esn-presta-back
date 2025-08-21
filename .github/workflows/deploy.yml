@@ -1,0 +1,51 @@
+name: Deploy Backend
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Écrire la clé privée depuis le secret dans un fichier (évite les soucis d’échappement)
+      - name: Prepare private key file
+        shell: bash
+        run: |
+          umask 077
+          cat > id_gha <<'EOF'
+          ${{ secrets.SSH_PRIVATE_KEY }}
+          EOF
+          chmod 600 id_gha
+          echo "Key file created: $(ls -l id_gha)"
+
+      - name: SSH to VPS and deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}     # ex: 51.xx.xx.xx
+          username: ${{ secrets.VPS_USER }} # ubuntu
+          port: ${{ secrets.VPS_PORT }}     # ex: 4423 si tu l'as changé
+          key_path: id_gha
+          script: |
+            set -e
+            echo "==> Pull code"
+            cd /opt/apps/esn-presta-back
+            if [ -d .git ]; then
+              git fetch --all
+              git reset --hard origin/main
+            else
+              git clone git@github.com:Gojobyte/esn-presta-back.git .
+              git checkout main || true
+            fi
+
+            echo "==> Run deploy-back.sh"
+            chmod +x deploy-back.sh
+            ./deploy-back.sh
+
+            echo "==> Check health"
+            curl -sfm 5 http://127.0.0.1:3001/api/health || (echo "Healthcheck failed" && exit 1)
